@@ -1,0 +1,12 @@
+{
+  "name": "presslabs-stack/wordpress-core",
+  "description": "Patched, ready for Stack WordPress to be used as drop-in replacement for johnpbloch/wordpress-core",
+  "type": "wordpress-core",
+  "license": "GPL-2.0-or-later",
+  "require": {
+    "php": ">=5.3.2"
+  },
+  "provide": {
+    "wordpress/core-implementation": "dev-master"
+  }
+}
