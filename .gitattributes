@@ -1,0 +1,7 @@
+# do not export build related stuff
+/.gitignore export-ignore
+/.gitattributes export-ignore
+/hack export-ignore
+/.drone.yml export-ignore
+/composer.lock export-ignore
+Makefile

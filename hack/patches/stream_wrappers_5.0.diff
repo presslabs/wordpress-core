@@ -1,0 +1,116 @@
+diff --git wordpress-orig/wp-admin/includes/file.php wordpress/wp-admin/includes/file.php
+index b8a0d9116a..1f77a34ef2 100644
+--- wordpress-orig/wp-admin/includes/file.php
++++ wordpress/wp-admin/includes/file.php
+@@ -861,7 +861,7 @@ function _wp_handle_upload( &$file, $overrides, $time, $action ) {
+ 	}
+ 
+ 	// Set correct file permissions.
+-	$stat = stat( dirname( $new_file ));
++	$stat = stat( trailingslashit( dirname( $new_file ) ) );
+ 	$perms = $stat['mode'] & 0000666;
+ 	@ chmod( $new_file, $perms );
+ 
+diff --git wordpress-orig/wp-includes/class-wp-image-editor-gd.php wordpress/wp-includes/class-wp-image-editor-gd.php
+index c5050b21d3..af66bf1c1c 100644
+--- wordpress-orig/wp-includes/class-wp-image-editor-gd.php
++++ wordpress/wp-includes/class-wp-image-editor-gd.php
+@@ -404,7 +404,7 @@ class WP_Image_Editor_GD extends WP_Image_Editor {
+ 		}
+ 
+ 		// Set correct file permissions
+-		$stat = stat( dirname( $filename ) );
++		$stat = stat( trailingslashit( dirname( $filename ) ) );
+ 		$perms = $stat['mode'] & 0000666; //same permissions as parent folder, strip off the executable bits
+ 		@ chmod( $filename, $perms );
+ 
+diff --git wordpress-orig/wp-includes/class-wp-image-editor-imagick.php wordpress/wp-includes/class-wp-image-editor-imagick.php
+index 9f6a0f3b52..dea84b4874 100644
+--- wordpress-orig/wp-includes/class-wp-image-editor-imagick.php
++++ wordpress/wp-includes/class-wp-image-editor-imagick.php
+@@ -21,6 +21,8 @@ class WP_Image_Editor_Imagick extends WP_Image_Editor {
+ 	 */
+ 	protected $image;
+ 
++	static protected $can_use_filehandles = false;
++
+ 	public function __destruct() {
+ 		if ( $this->image instanceof Imagick ) {
+ 			// we don't need the original in memory anymore
+@@ -82,6 +84,10 @@ class WP_Image_Editor_Imagick extends WP_Image_Editor {
+ 			return false;
+ 		}
+ 
++		if ( version_compare( phpversion( 'imagick' ), '3.2.0', '>' ) and in_array( 'writeimagefile', $class_methods ) && in_array( 'readimagefile', $class_methods ) ) {
++			self::$can_use_filehandles = true;
++		}
++
+ 		// HHVM Imagick does not support loading from URL, so fail to allow fallback to GD.
+ 		if ( defined( 'HHVM_VERSION' ) && isset( $args['path'] ) && preg_match( '|^https?://|', $args['path'] ) ) {
+ 			return false;
+@@ -144,13 +150,22 @@ class WP_Image_Editor_Imagick extends WP_Image_Editor {
+ 			$file_extension = strtolower( pathinfo( $this->file, PATHINFO_EXTENSION ) );
+ 			$filename = $this->file;
+ 
++			$imagick_filename = null;
+ 			if ( 'pdf' == $file_extension ) {
+-				$filename = $this->pdf_setup();
++				if ( self::$can_use_filehandles ) {
++					$imagick_filename = $this->pdf_setup();
++				} else {
++					$filename = $this->pdf_setup();
++				}
+ 			}
+ 
+ 			// Reading image after Imagick instantiation because `setResolution`
+ 			// only applies correctly before the image is read.
+-			$this->image->readImage( $filename );
++			if ( self::$can_use_filehandles ) {
++				$this->image->readImageFile( fopen( $filename, 'rb' ), $imagick_filename );
++			} else {
++				$this->image->readImage( $filename );
++			}
+ 
+ 			if ( ! $this->image->valid() )
+ 				return new WP_Error( 'invalid_image', __('File is not an image.'), $this->file);
+@@ -622,8 +637,16 @@ class WP_Image_Editor_Imagick extends WP_Image_Editor {
+ 			// Store initial Format
+ 			$orig_format = $this->image->getImageFormat();
+ 
+-			$this->image->setImageFormat( strtoupper( $this->get_extension( $mime_type ) ) );
+-			$this->make_image( $filename, array( $image, 'writeImage' ), array( $filename ) );
++			$image_format = strtoupper( $this->get_extension( $mime_type ) );
++
++			if ( self::$can_use_filehandles ) {
++				$fp = fopen( $filename, 'wb' );
++				$this->make_image( $filename, array( $image, 'writeImageFile' ), array( $fp, $image_format ) );
++				fclose( $fp );
++			} else {
++				$this->image->setImageFormat( $image_format );
++				$this->make_image( $filename, array( $image, 'writeImage' ), array( $filename ) );
++			}
+ 
+ 			// Reset original Format
+ 			$this->image->setImageFormat( $orig_format );
+@@ -633,7 +656,7 @@ class WP_Image_Editor_Imagick extends WP_Image_Editor {
+ 		}
+ 
+ 		// Set correct file permissions
+-		$stat = stat( dirname( $filename ) );
++		$stat = stat( trailingslashit ( dirname( $filename ) ) );
+ 		$perms = $stat['mode'] & 0000666; //same permissions as parent folder, strip off the executable bits
+ 		@ chmod( $filename, $perms );
+ 
+diff --git wordpress-orig/wp-includes/functions.php wordpress/wp-includes/functions.php
+index c44685e604..872217c06b 100644
+--- wordpress-orig/wp-includes/functions.php
++++ wordpress/wp-includes/functions.php
+@@ -2207,7 +2207,7 @@ function wp_upload_bits( $name, $deprecated, $bits, $time = null ) {
+ 	clearstatcache();
+ 
+ 	// Set correct file permissions
+-	$stat = @ stat( dirname( $new_file ) );
++	$stat = @ stat( trailingslashit (dirname( $new_file ) ) );
+ 	$perms = $stat['mode'] & 0007777;
+ 	$perms = $perms & 0000666;
+ 	@ chmod( $new_file, $perms );
